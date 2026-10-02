@@ -21,6 +21,11 @@ button.secondary{background:#303746}.cards{display:grid;grid-template-columns:re
 .log{max-height:190px;overflow:auto;font-size:12px;color:#c8ced9}.log div{padding:6px 0;border-bottom:1px solid #252b37}
 .marketbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 15px;padding:11px 13px;background:var(--panel2);border-radius:10px}.marketbar strong{font-size:15px}.clock{color:#cbd1dc;font-size:13px}
 @media(max-width:800px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.stock{grid-template-columns:1.2fr .9fr 1fr}.actions{grid-column:1/-1;justify-content:flex-start}}
+
+.chart-tabs{display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap}.chart-tabs button{padding:7px 10px;font-size:12px;background:#303746}.chart-tabs button.active{background:var(--accent)}
+.chartbox{width:100%;height:360px;background:#11151d;border-radius:10px;border:1px solid var(--line);overflow:hidden}.chartbox svg{width:100%;height:100%}
+.indicators{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.indicator{background:#11151d;border:1px solid var(--line);border-radius:9px;padding:9px}.indicator b{display:block;font-size:13px}.indicator span{font-size:11px;color:var(--muted)}
+.note{font-size:11px;color:#747d8c;margin-top:8px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -50,12 +55,22 @@ button.secondary{background:#303746}.cards{display:grid;grid-template-columns:re
 
     <div>
       <div class="panel">
-        <h2 id="chartTitle">테크온 주가</h2>
-        <svg id="chart" viewBox="0 0 700 260" preserveAspectRatio="none"></svg>
-        <div style="display:flex;gap:15px;font-size:12px;color:#aeb5c2;margin-top:9px">
-          <span><b style="color:var(--up)">━━</b> 상승</span>
-          <span><b style="color:var(--down)">━━</b> 하락</span>
+        <h2 id="chartTitle">테크온 분석</h2>
+        <div class="chart-tabs">
+          <button class="active" onclick="setChart('candle',this)">캔들</button>
+          <button onclick="setChart('line',this)">라인</button>
+          <button onclick="setChart('bollinger',this)">볼린저밴드</button>
         </div>
+        <div class="chartbox"><svg id="chart" viewBox="0 0 760 360" preserveAspectRatio="none"></svg></div>
+        <div style="display:flex;gap:14px;font-size:11px;color:#9aa3b2;margin-top:8px;flex-wrap:wrap">
+          <span>🔴 상승</span><span>🔵 하락</span><span id="legendExtra"></span>
+        </div>
+        <div class="indicators">
+          <div class="indicator"><b id="rsiValue">RSI -</b><span>14기간 상대강도지수</span></div>
+          <div class="indicator"><b id="volumeValue">거래량 -</b><span>최근 거래량</span></div>
+          <div class="indicator"><b id="perValue">PER -</b><span>주가 ÷ 주당순이익</span></div>
+        </div>
+        <div class="note">RSI 70 이상은 과매수, 30 이하는 과매도 구간으로 참고할 수 있습니다. PER은 게임 내부의 가상 EPS를 이용합니다.</div>
       </div>
       <div class="panel" style="margin-top:14px">
         <h2>📰 시장 뉴스</h2>
@@ -71,15 +86,15 @@ button.secondary{background:#303746}.cards{display:grid;grid-template-columns:re
 
 <script>
 const data=[
-{name:"테크온",price:12000,vol:.12},
-{name:"메가바이오",price:8500,vol:.18},
-{name:"그린에너지",price:6700,vol:.20},
-{name:"로보틱스",price:15000,vol:.15},
-{name:"푸드랩",price:4200,vol:.10},
-{name:"게임웍스",price:9300,vol:.22},
-{name:"모빌리티",price:11000,vol:.16},
-{name:"엔터웨이브",price:7600,vol:.19}
-].map(s=>({...s,startPrice:s.price,prev:s.price,qty:0,history:[s.price]}));
+{name:"테크온",price:12000,vol:.12,eps:600},
+{name:"메가바이오",price:8500,vol:.18,eps:340},
+{name:"그린에너지",price:6700,vol:.20,eps:335},
+{name:"로보틱스",price:15000,vol:.15,eps:500},
+{name:"푸드랩",price:4200,vol:.10,eps:350},
+{name:"게임웍스",price:9300,vol:.22,eps:465},
+{name:"모빌리티",price:11000,vol:.16,eps:550},
+{name:"엔터웨이브",price:7600,vol:.19,eps:380}
+].map(s=>({...s,startPrice:s.price,prev:s.price,qty:0,history:[s.price],candles:[],volumes:[]}));
 
 let cash=100000, selected=0, day=1, hour=9, minute=0, running=true, timer=null;
 const logs=[], news=[];
@@ -170,18 +185,67 @@ function renderSummary(){
  document.getElementById("assets").textContent=money(assets);
  const r=document.getElementById("totalReturn");r.textContent=(ret>=0?"+":"")+ret.toFixed(2)+"%";r.className="value "+(ret>=0?"up":"down")
 }
+let chartMode="candle";
+function calcRSI(vals){
+ const n=Math.min(14,vals.length-1); if(n<=0)return 50;
+ let gain=0,loss=0;
+ for(let i=vals.length-n;i<vals.length;i++){const d=vals[i]-vals[i-1];if(d>0)gain+=d;else loss-=d}
+ if(loss===0)return gain?100:50;
+ return 100-(100/(1+gain/loss));
+}
+function bbFor(vals){
+ const n=Math.min(20,vals.length), a=vals.slice(-n);
+ const mid=a.reduce((x,y)=>x+y,0)/n;
+ const sd=Math.sqrt(a.reduce((x,y)=>x+(y-mid)**2,0)/n);
+ return {mid,up:mid+2*sd,lo:mid-2*sd};
+}
+function setChart(mode,btn){
+ chartMode=mode;
+ document.querySelectorAll(".chart-tabs button").forEach(b=>b.classList.remove("active"));
+ btn.classList.add("active"); drawChart();
+}
 function drawChart(){
- const s=data[selected], svg=document.getElementById("chart"), vals=s.history.slice(-40), w=700,h=260,p=22;
+ const s=data[selected], svg=document.getElementById("chart"), vals=s.history.slice(-40), w=760,h=360,p=35;
  if(vals.length<2){svg.innerHTML="";return}
- const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
+ const all=chartMode==="bollinger"?vals.concat(bbFor(vals).up,bbFor(vals).lo):vals;
+ const min=Math.min(...all),max=Math.max(...all),range=max-min||1;
  const x=i=>p+i*(w-p*2)/(vals.length-1), y=v=>h-p-(v-min)/range*(h-p*2);
  let out=`<line x1="${p}" y1="${h-p}" x2="${w-p}" y2="${h-p}" stroke="#303746"/>`;
- for(let i=1;i<vals.length;i++){
-  const c=vals[i]>=vals[i-1]?"var(--up)":"var(--down)";
-  out+=`<line x1="${x(i-1)}" y1="${y(vals[i-1])}" x2="${x(i)}" y2="${y(vals[i])}" stroke="${c}" stroke-width="3"/>`
+ if(chartMode==="candle"){
+   const cs=s.candles.slice(-vals.length), step=(w-p*2)/Math.max(cs.length-1,1), bw=Math.max(5,step*.55);
+   cs.forEach((c,i)=>{
+     const xx=p+i*step, color=c.close>=c.open?"var(--up)":"var(--down)";
+     out+=`<line x1="${xx}" y1="${y(c.high)}" x2="${xx}" y2="${y(c.low)}" stroke="${color}" stroke-width="2"/>`;
+     const top=y(Math.max(c.open,c.close)),bot=y(Math.min(c.open,c.close));
+     out+=`<rect x="${xx-bw/2}" y="${top}" width="${bw}" height="${Math.max(2,bot-top)}" fill="${color}"/>`;
+   });
+   document.getElementById("legendExtra").textContent="캔들 몸통=시가·종가 / 꼬리=고가·저가";
+ }else if(chartMode==="line"){
+   for(let i=1;i<vals.length;i++){
+     const c=vals[i]>=vals[i-1]?"var(--up)":"var(--down)";
+     out+=`<line x1="${x(i-1)}" y1="${y(vals[i-1])}" x2="${x(i)}" y2="${y(vals[i])}" stroke="${c}" stroke-width="3"/>`;
+   }
+   document.getElementById("legendExtra").textContent="";
+ }else{
+   const hist=s.history.slice(-Math.min(40,s.history.length));
+   const mids=[],ups=[],los=[];
+   for(let i=0;i<hist.length;i++){
+     const q=bbFor(s.history.slice(0,s.history.length-hist.length+i+1));
+     mids.push(q.mid);ups.push(q.up);los.push(q.lo);
+   }
+   out+=`<path d="${mids.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" ")}" fill="none" stroke="#8b5cf6" stroke-width="2"/>`;
+   out+=`<path d="${ups.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" ")}" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5 4"/>`;
+   out+=`<path d="${los.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" ")}" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="5 4"/>`;
+   out+=`<path d="${vals.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" ")}" fill="none" stroke="#f2f4f8" stroke-width="2"/>`;
+   document.getElementById("legendExtra").textContent="🟠 상단 / 🟣 중심 / 🔵 하단";
  }
- out+=`<text x="${p}" y="17" fill="#9aa3b2" font-size="12">${money(vals[0])}</text><text x="${w-p}" y="17" text-anchor="end" fill="#9aa3b2" font-size="12">${money(vals[vals.length-1])}</text>`;
- svg.innerHTML=out;document.getElementById("chartTitle").textContent=s.name+" 주가"
+ out+=`<text x="${p}" y="18" fill="#9aa3b2" font-size="12">${money(max)}</text><text x="${p}" y="${h-5}" fill="#9aa3b2" font-size="12">${money(min)}</text>`;
+ svg.innerHTML=out;
+ document.getElementById("chartTitle").textContent=s.name+" 분석";
+ const rsi=calcRSI(s.history);
+ document.getElementById("rsiValue").textContent=`RSI ${rsi.toFixed(1)} · ${rsi>=70?"과매수":rsi<=30?"과매도":"중립"}`;
+ document.getElementById("volumeValue").textContent="거래량 "+(s.volumes.length?s.volumes[s.volumes.length-1]:0).toLocaleString()+"주";
+ document.getElementById("perValue").textContent="PER "+(s.price/s.eps).toFixed(1)+"배";
 }
 function render(){renderStocks();renderSummary();drawChart();renderNews();renderLog()}
 function selectStock(i){selected=i;renderStocks();drawChart()}
@@ -205,8 +269,10 @@ function triggerCompanyNews(){
    const e=pool[Math.floor(Math.random()*pool.length)];
    const [type,title,desc,impact]=e;
    company.prev=company.price;
-   // 뉴스 영향 + 작은 시장 노이즈
+   const oldPrice=company.price;
    company.price=Math.max(500,Math.round(company.price*(1+impact+(Math.random()-.5)*0.025)));
+   company.candles.push({open:oldPrice,close:company.price,high:Math.max(oldPrice,company.price)*(1+Math.random()*.012),low:Math.max(500,Math.min(oldPrice,company.price)*(1-Math.random()*.012))});
+   company.volumes.push(Math.round(500+Math.random()*4500+Math.abs(impact)*20000));
    company.history.push(company.price);
    if(company.history.length>80)company.history.shift();
    addNews(type,title,desc,impact,company.name);
@@ -215,8 +281,11 @@ function triggerCompanyNews(){
    const market=(Math.random()-.48)*.045;
    data.forEach(s=>{
      s.prev=s.price;
+     const oldPrice=s.price;
      s.price=Math.max(500,Math.round(s.price*(1+market+(Math.random()-.5)*s.vol*.08)));
-     s.history.push(s.price);if(s.history.length>80)s.history.shift();
+     s.candles.push({open:oldPrice,close:s.price,high:Math.max(oldPrice,s.price)*(1+Math.random()*.01),low:Math.max(500,Math.min(oldPrice,s.price)*(1-Math.random()*.01))});
+     s.volumes.push(Math.round(500+Math.random()*4000));
+     s.history.push(s.price);if(s.history.length>80)s.history.shift();if(s.candles.length>80)s.candles.shift();if(s.volumes.length>80)s.volumes.shift();
    });
    addNews("neutral","오늘의 시장은 특별한 이슈 없이 움직이는 중","전체 시장에 작은 변동이 발생했다.",market>=0?market:market,"전체 시장");
  }
@@ -240,6 +309,7 @@ document.getElementById("pauseBtn").onclick=()=>{
  running=!running;
  document.getElementById("pauseBtn").textContent=running?"⏸ 일시정지":"▶ 계속 진행";
 };
+data.forEach(s=>{for(let i=0;i<18;i++){const prev=s.price*(1+(Math.random()-.5)*.02);const close=s.price*(1+(Math.random()-.5)*.02);s.history.unshift(Math.max(500,Math.round(prev)));s.candles.unshift({open:Math.round(prev),close:Math.round(close),high:Math.max(prev,close)*(1+Math.random()*.01),low:Math.max(500,Math.min(prev,close)*(1-Math.random()*.01))});s.volumes.unshift(Math.round(500+Math.random()*4000))}s.history=s.history.slice(-80);s.candles=s.candles.slice(-80);s.volumes=s.volumes.slice(-80)});
 addNews("neutral","가상 주식시장 개장","8개 기업의 거래가 시작됐다. 소문과 뉴스에 따라 주가가 움직인다.",0,"전체 시장");
 addLog("게임 시작 — 초기 자금 ₩100,000");
 render();
