@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>가상 주식 게임</title>
+<style>
+:root{--bg:#0f1117;--panel:#171a22;--panel2:#1d212b;--text:#f2f4f8;--muted:#9aa3b2;--up:#e53935;--down:#1976d2;--line:#2a3040;--accent:#8b5cf6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,"Noto Sans KR",sans-serif}
+.wrap{max-width:1100px;margin:auto;padding:20px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+h1{margin:0 0 5px;font-size:27px}.sub{color:var(--muted);font-size:13px}
+button{border:0;border-radius:9px;padding:10px 15px;background:var(--accent);color:white;font-weight:700;cursor:pointer}
+button.secondary{background:#303746}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}.card{padding:15px}.label{font-size:12px;color:var(--muted)}.value{font-size:21px;font-weight:800;margin-top:5px}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.panel{padding:15px}.panel h2{font-size:16px;margin:0 0 13px}
+.stock{display:grid;grid-template-columns:1.35fr 1fr 1fr auto;align-items:center;gap:10px;padding:13px 9px;border-bottom:1px solid var(--line);cursor:pointer}
+.stock:last-child{border-bottom:0}.stock.selected{background:var(--panel2);border-radius:9px}.name{font-weight:800}.price{text-align:right;font-weight:800}.small{font-size:12px;margin-top:3px}.small span{color:var(--muted);font-size:10px}.up{color:var(--up)}.down{color:var(--down)}
+.actions{display:flex;gap:8px;justify-content:flex-end}.actions button{padding:7px 10px;font-size:12px}.buy{background:#b91c1c}.sell{background:#1455a3}
+#chart{width:100%;height:260px;background:#11151d;border-radius:10px;border:1px solid var(--line)}
+.news{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}.news:last-child{border:0}.badge{font-size:11px;font-weight:800;min-width:34px;height:22px;border-radius:6px;display:grid;place-items:center}.good{background:#5b1d24;color:#ffb4b8}.bad{background:#123b72;color:#a9d0ff}.neutral{background:#303746;color:#d4d9e2}
+.log{max-height:190px;overflow:auto;font-size:12px;color:#c8ced9}.log div{padding:6px 0;border-bottom:1px solid #252b37}
+.marketbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 15px;padding:11px 13px;background:var(--panel2);border-radius:10px}.marketbar strong{font-size:15px}.clock{color:#cbd1dc;font-size:13px}
+@media(max-width:800px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.stock{grid-template-columns:1.2fr .9fr 1fr}.actions{grid-column:1/-1;justify-content:flex-start}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>📈 가상 주식 게임</h1><div class="sub">가상의 회사에 투자해 자산을 불려보세요.</div></div>
+    <div><button id="pauseBtn" class="secondary">⏸ 일시정지</button></div>
+  </div>
+
+  <div class="marketbar">
+    <strong id="day">1일차</strong>
+    <div class="clock" id="clock">09:00 · 장 진행 중</div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="label">보유 현금</div><div class="value" id="cash">₩100,000</div></div>
+    <div class="card"><div class="label">주식 평가액</div><div class="value" id="stockValue">₩0</div></div>
+    <div class="card"><div class="label">총 자산</div><div class="value" id="assets">₩100,000</div></div>
+    <div class="card"><div class="label">총 수익률</div><div class="value" id="totalReturn">+0.00%</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>종목</h2>
+      <div id="stocks"></div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2 id="chartTitle">테크온 주가</h2>
+        <svg id="chart" viewBox="0 0 700 260" preserveAspectRatio="none"></svg>
+        <div style="display:flex;gap:15px;font-size:12px;color:#aeb5c2;margin-top:9px">
+          <span><b style="color:var(--up)">━━</b> 상승</span>
+          <span><b style="color:var(--down)">━━</b> 하락</span>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>📰 시장 뉴스</h2>
+        <div id="news"></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>거래 기록</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const data=[
+{name:"테크온",price:12000,vol:.12},
+{name:"메가바이오",price:8500,vol:.18},
+{name:"그린에너지",price:6700,vol:.20},
+{name:"로보틱스",price:15000,vol:.15},
+{name:"푸드랩",price:4200,vol:.10},
+{name:"게임웍스",price:9300,vol:.22},
+{name:"모빌리티",price:11000,vol:.16},
+{name:"엔터웨이브",price:7600,vol:.19}
+].map(s=>({...s,startPrice:s.price,prev:s.price,qty:0,history:[s.price]}));
+
+let cash=100000, selected=0, day=1, hour=9, minute=0, running=true, timer=null;
+const logs=[], news=[];
+
+const companyNews={
+"테크온":[
+["good","테크온, 해외 IT기업과 초대형 클라우드 계약 체결!","해외 시장 진출 기대감에 투자자들이 환호했다.",0.105],
+["good","테크온, 신형 AI 칩셋 개발 성공 발표","업계 최초 수준의 성능이라는 발표에 매수세가 몰렸다.",0.085],
+["bad","테크온 임원, 법인카드 사적 사용 대거 적발","회사 내부통제 논란이 불거지며 투자심리가 얼어붙었다.",-0.12],
+["bad","테크온 신제품 출시 하루 만에 서버 먹통 사태","출시 행사가 예상치 못한 긴급 점검으로 마무리됐다.",-0.095]
+],
+"메가바이오":[
+["good","메가바이오, 신약 임상 3상에서 긍정적 결과 발표","시장 기대를 웃도는 결과에 바이오 투자자들이 들썩였다.",0.14],
+["good","메가바이오, 유럽 제약사와 공동개발 계약","글로벌 판로 확보 소식이 전해졌다.",0.09],
+["bad","메가바이오, 임상 일정 예상보다 6개월 지연","일정 지연 소식에 투자자들의 우려가 커졌다.",-0.13],
+["bad","메가바이오 연구실 냉장고 고장으로 샘플 긴급 폐기","회사 측은 재발 방지 대책을 마련하겠다고 밝혔다.",-0.105]
+],
+"그린에너지":[
+["good","그린에너지, 대형 태양광 발전소 수주 성공","수조 원 규모의 장기 계약 소식이 전해졌다.",0.12],
+["good","그린에너지, 차세대 배터리 효율 개선 성공","기술 경쟁력에 대한 기대감이 높아졌다.",0.10],
+["bad","그린에너지, 핵심 원자재 공급 차질 발생","생산 일정에 일부 차질이 예상된다는 소식이 나왔다.",-0.11],
+["bad","그린에너지 공장 지붕에서 누수 발견","회사 측은 생산에는 문제가 없다고 해명했지만 주가는 흔들렸다.",-0.07]
+],
+"로보틱스":[
+["good","로보틱스, 글로벌 물류기업에 배송 로봇 1만 대 공급","대규모 수주 소식에 로봇주가 강하게 반응했다.",0.13],
+["good","로보틱스, 사람이 걷는 속도와 비슷한 신형 로봇 공개","시연 영상이 화제가 되며 관심이 폭발했다.",0.08],
+["bad","로보틱스 시제품, 시연 도중 갑자기 뒤로 걸어가","회사는 '의도된 후진 기능'이라고 설명했지만 시장은 당황했다.",-0.09],
+["bad","로보틱스, 핵심 부품 리콜 결정","안전 점검을 위해 일부 제품을 회수하기로 했다.",-0.12]
+],
+"푸드랩":[
+["good","푸드랩, 편의점 전국 체인과 신제품 독점 공급 계약","신제품 판매량이 예상치를 크게 웃돌고 있다.",0.09],
+["good","푸드랩 신메뉴, 출시 첫날 온라인 주문 폭주","서버 증설까지 검토할 정도로 주문이 몰렸다.",0.07],
+["bad","푸드랩 신제품에서 포장 불량 발견","일부 제품의 자진 회수 소식이 알려졌다.",-0.10],
+["bad","푸드랩 신메뉴 이름 오타 논란… 전량 재인쇄","회사 측은 웃픈 해프닝이라며 사과했다.",-0.065]
+],
+"게임웍스":[
+["good","게임웍스 신작, 출시 첫날 동시접속자 기록 경신","유저들의 호평이 이어지며 흥행 기대감이 커졌다.",0.15],
+["good","게임웍스, 유명 IP와 대형 협업 발표","팬들의 기대감이 주가를 끌어올렸다.",0.10],
+["bad","게임웍스 신작 서버 점검이 12시간째 진행 중","접속 장애가 장기화되며 이용자 불만이 폭발했다.",-0.14],
+["bad","게임웍스 공식 방송 중 개발자가 스포일러 실수","회사 측이 급히 방송을 종료하고 사과했다.",-0.08]
+],
+"모빌리티":[
+["good","모빌리티, 대기업과 전기차 플랫폼 공급 계약","대형 계약 체결 소식에 시장 기대가 높아졌다.",0.12],
+["good","모빌리티 자율주행 시스템, 도로 주행 테스트 통과","상용화 가능성이 한층 가까워졌다는 평가가 나왔다.",0.10],
+["bad","모빌리티 일부 차량 소프트웨어 리콜","안전 관련 업데이트를 위해 리콜을 진행한다.",-0.115],
+["bad","모빌리티 배송 로봇 300대가 동시에 길을 잘못 들어","회사 측은 지도 데이터 오류를 수정 중이라고 밝혔다.",-0.075]
+],
+"엔터웨이브":[
+["good","엔터웨이브 소속 아티스트, 글로벌 차트 정상 등극","해외 팬덤 확대 기대감에 회사 주가도 상승했다.",0.13],
+["good","엔터웨이브, 초대형 공연 투어 계약 체결","연말까지 이어지는 대규모 공연 일정이 공개됐다.",0.095],
+["bad","엔터웨이브 공연 티켓 서버, 예매 시작과 동시에 다운","회사 측이 긴급 복구에 나섰다.",-0.085],
+["bad","엔터웨이브 아티스트의 신곡 공개일을 회사가 하루 착각","공식 계정에 혼선이 발생해 회사가 사과했다.",-0.07]
+]};
+
+function money(n){return "₩"+Math.round(n).toLocaleString("ko-KR")}
+function addLog(t){logs.unshift(`[${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}] ${t}`);if(logs.length>40)logs.pop();renderLog()}
+function addNews(type,title,desc,impact,company){
+ news.unshift({type,title,desc,impact,company,day,time:`${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}`});
+ if(news.length>8)news.pop();renderNews()
+}
+function renderLog(){document.getElementById("log").innerHTML=logs.map(x=>`<div>${x}</div>`).join("")||"<div>아직 거래 기록이 없습니다.</div>"}
+function renderNews(){
+ document.getElementById("news").innerHTML=news.map(n=>`
+ <div class="news">
+   <div class="badge ${n.type}">${n.type==="good"?"호재":n.type==="bad"?"악재":"시장"}</div>
+   <div><b>${n.title}</b><div style="color:#9aa3b2;margin-top:3px">${n.desc}</div>
+   <div style="font-size:10px;color:#737c8d;margin-top:4px">Day ${n.day} · ${n.time} · ${n.company} · ${n.impact>=0?"+":""}${(n.impact*100).toFixed(1)}% 영향</div></div>
+ </div>`).join("")||"<div style='color:#9aa3b2'>아직 시장 뉴스가 없습니다.</div>"
+}
+function renderStocks(){
+ document.getElementById("stocks").innerHTML=data.map((s,i)=>{
+  const live=(s.price/s.prev-1)*100, base=(s.price/s.startPrice-1)*100;
+  return `<div class="stock ${i===selected?"selected":""}" onclick="selectStock(${i})">
+    <div><div class="name">${s.name}</div><div class="small">보유 ${s.qty}주</div></div>
+    <div class="price">${money(s.price)}</div>
+    <div>
+      <div class="small ${live>=0?"up":"down"}">${live>=0?"+":""}${live.toFixed(2)}% <span>실시간</span></div>
+      <div class="small ${base>=0?"up":"down"}">${base>=0?"+":""}${base.toFixed(2)}% <span>원금 대비</span></div>
+    </div>
+    <div class="actions"><button class="buy" onclick="event.stopPropagation();trade(${i},1)">매수</button><button class="sell" onclick="event.stopPropagation();trade(${i},-1)">매도</button></div>
+  </div>`
+ }).join("")
+}
+function renderSummary(){
+ let sv=data.reduce((a,s)=>a+s.price*s.qty,0), assets=cash+sv, ret=(assets/100000-1)*100;
+ document.getElementById("cash").textContent=money(cash);
+ document.getElementById("stockValue").textContent=money(sv);
+ document.getElementById("assets").textContent=money(assets);
+ const r=document.getElementById("totalReturn");r.textContent=(ret>=0?"+":"")+ret.toFixed(2)+"%";r.className="value "+(ret>=0?"up":"down")
+}
+function drawChart(){
+ const s=data[selected], svg=document.getElementById("chart"), vals=s.history.slice(-40), w=700,h=260,p=22;
+ if(vals.length<2){svg.innerHTML="";return}
+ const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
+ const x=i=>p+i*(w-p*2)/(vals.length-1), y=v=>h-p-(v-min)/range*(h-p*2);
+ let out=`<line x1="${p}" y1="${h-p}" x2="${w-p}" y2="${h-p}" stroke="#303746"/>`;
+ for(let i=1;i<vals.length;i++){
+  const c=vals[i]>=vals[i-1]?"var(--up)":"var(--down)";
+  out+=`<line x1="${x(i-1)}" y1="${y(vals[i-1])}" x2="${x(i)}" y2="${y(vals[i])}" stroke="${c}" stroke-width="3"/>`
+ }
+ out+=`<text x="${p}" y="17" fill="#9aa3b2" font-size="12">${money(vals[0])}</text><text x="${w-p}" y="17" text-anchor="end" fill="#9aa3b2" font-size="12">${money(vals[vals.length-1])}</text>`;
+ svg.innerHTML=out;document.getElementById("chartTitle").textContent=s.name+" 주가"
+}
+function render(){renderStocks();renderSummary();drawChart();renderNews();renderLog()}
+function selectStock(i){selected=i;renderStocks();drawChart()}
+function trade(i,dir){
+ const s=data[i];
+ if(dir===1){
+   if(cash<s.price){addLog(`${s.name} 매수 실패 — 현금 부족`);return}
+   cash-=s.price;s.qty++;addLog(`${s.name} 1주 매수 @ ${money(s.price)}`)
+ }else{
+   if(s.qty<=0){addLog(`${s.name} 매도 실패 — 보유 주식 없음`);return}
+   cash+=s.price;s.qty--;addLog(`${s.name} 1주 매도 @ ${money(s.price)}`)
+ }
+ renderSummary();renderStocks()
+}
+
+function triggerCompanyNews(){
+ // 약 55% 확률로 특정 기업 뉴스 발생, 나머지는 일반 시장 흐름
+ if(Math.random()<0.55){
+   const company=data[Math.floor(Math.random()*data.length)];
+   const pool=companyNews[company.name];
+   const e=pool[Math.floor(Math.random()*pool.length)];
+   const [type,title,desc,impact]=e;
+   company.prev=company.price;
+   // 뉴스 영향 + 작은 시장 노이즈
+   company.price=Math.max(500,Math.round(company.price*(1+impact+(Math.random()-.5)*0.025)));
+   company.history.push(company.price);
+   if(company.history.length>80)company.history.shift();
+   addNews(type,title,desc,impact,company.name);
+   addLog(`📰 ${company.name} ${type==="good"?"호재":"악재"} 발생 → ${money(company.price)}`);
+ }else{
+   const market=(Math.random()-.48)*.045;
+   data.forEach(s=>{
+     s.prev=s.price;
+     s.price=Math.max(500,Math.round(s.price*(1+market+(Math.random()-.5)*s.vol*.08)));
+     s.history.push(s.price);if(s.history.length>80)s.history.shift();
+   });
+   addNews("neutral","오늘의 시장은 특별한 이슈 없이 움직이는 중","전체 시장에 작은 변동이 발생했다.",market>=0?market:market,"전체 시장");
+ }
+}
+
+function tick(){
+ if(!running)return;
+ minute+=15;
+ if(minute>=60){minute=0;hour++}
+ if(hour>=16){
+   day++;hour=9;minute=0;
+   addNews("neutral",`Day ${day} 장 시작`,`새로운 거래일이 시작됐다. 오늘도 어떤 기업에서 사건이 터질지 아무도 모른다.`,0,"전체 시장");
+ }
+ // 시간마다 가격 변동
+ triggerCompanyNews();
+ render();
+ document.getElementById("day").textContent=day+"일차";
+ document.getElementById("clock").textContent=`${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")} · 장 진행 중`;
+}
+document.getElementById("pauseBtn").onclick=()=>{
+ running=!running;
+ document.getElementById("pauseBtn").textContent=running?"⏸ 일시정지":"▶ 계속 진행";
+};
+addNews("neutral","가상 주식시장 개장","8개 기업의 거래가 시작됐다. 소문과 뉴스에 따라 주가가 움직인다.",0,"전체 시장");
+addLog("게임 시작 — 초기 자금 ₩100,000");
+render();
+timer=setInterval(tick,3000);
+</script>
+</body>
+</html>
